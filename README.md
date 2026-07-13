@@ -4,12 +4,23 @@ Sonosphere is the first phase of a music-to-3D-world system. It accepts an uploa
 
 This phase deliberately stops at prompt generation. It does not contain a 3D renderer, Marble integration, camera system, audio-reactive effects, accounts, or persistence.
 
+The prototype appears intended for creative technologists and world-building teams evaluating how musical evidence can drive environment design. This audience is inferred from the workflow and generated artifacts; the repository does not contain a formal product brief.
+
+## Technology stack
+
+- TypeScript, React 19, and the Next.js App Router API, compiled by vinext and Vite
+- Cloudflare Workers/Sites runtime integration through Wrangler
+- Tailwind CSS 4 plus project-specific global CSS
+- Zod schemas at API and AI-output boundaries
+- OpenAI Responses API Structured Outputs in optional live mode
+- Node's built-in test runner and ESLint 9
+
 ## Run locally
 
 Requirements: Node.js 22.13 or newer.
 
 ```bash
-npm install
+npm ci
 copy .env.example .env.local
 npm run dev
 ```
@@ -19,8 +30,11 @@ Open the local URL printed by the development server. Build and verify with:
 ```bash
 npm run build
 npm run lint
+npm run typecheck
 npm test
 ```
+
+There is currently no formatter dependency or formatter-check command. The committed `package-lock.json` is the source of truth for dependency installation.
 
 ## How the prototype works
 
@@ -55,6 +69,22 @@ Browser upload + guidance
 ```
 
 The provider contracts live in `lib/providers/types.ts`. Mock implementations are registered in `lib/providers/mock.ts`; the analysis pipeline never depends on a vendor-specific SDK. Shared Zod schemas live in `lib/schemas.ts`, confidence and weighting logic in `lib/analysis/weights.ts`, and the orchestrated pipeline in `lib/analysis/pipeline.ts`.
+
+### Project structure
+
+```text
+app/                    Next-compatible UI, global styles, and API routes
+lib/schemas.ts          Shared request, provider, analysis, and output contracts
+lib/providers/          Vendor-neutral interfaces and deterministic mock adapters
+lib/analysis/           Confidence, weighting, interpretation, and prompt pipeline
+lib/ai/                 Optional OpenAI Structured Output enhancement
+worker/                 Cloudflare Worker entry point and image optimization
+build/                  Source Vite plugin that packages Sites metadata at build time
+tests/                  Built-worker integration tests
+examples/               Representative generated prompt excerpts
+public/                 Static assets
+.openai/hosting.json    Sites project metadata; D1 and R2 are currently unconfigured
+```
 
 API routes:
 
@@ -147,9 +177,12 @@ See [`examples/generated-prompts.md`](examples/generated-prompts.md) for represe
 - Mock analysis does not inspect acoustic content, duration, tags, or corruption beyond basic file validation.
 - Live recognition, licensed lyrics, research, source separation, and transcription adapters are extension points, not configured providers.
 - The local generator is deterministic and fixture-aware; OpenAI provides richer synthesis only when explicitly enabled.
+- In local mode, `visualPreference` and the `intensity` refinement are accepted but do not currently change the generated world. The balance control changes evidence weights, but those weights do not substantially rewrite deterministic prompt content.
 - Context citations are mock summaries in development mode and should not be treated as live research.
 - Prompt generation describes a static/persistent base world. Timed lighting, deformation, particles, camera paths, and audio reactivity belong to later phases.
 - Audio is held by the browser during the multi-step flow. Production uploads should use bounded temporary object storage and explicit deletion guarantees.
+
+For implementation status, data-flow details, and known issues, see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md). Future work and decisions requiring product input are tracked in [`ROADMAP.md`](ROADMAP.md).
 
 ## Recommended next steps
 
