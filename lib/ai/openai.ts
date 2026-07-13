@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { songInterpretationSchema, spatialInterpretationSchema, worldPromptSchema, type GenerateRequest, type SongWorldAnalysis } from "@/lib/schemas";
 
@@ -6,13 +7,14 @@ export const aiEnabled = () => process.env.AI_MODE === "live" && Boolean(process
 
 async function structured<T>(name: string, schema: z.ZodType<T>, instructions: string, payload: unknown): Promise<T> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const response = await client.responses.create({
+  const response = await client.responses.parse({
     model: process.env.OPENAI_MODEL || "gpt-5-mini",
     instructions,
     input: JSON.stringify(payload),
-    text: { format: { type: "json_schema", name, strict: true, schema: z.toJSONSchema(schema) } },
+    text: { format: zodTextFormat(schema, name) },
   });
-  return schema.parse(JSON.parse(response.output_text));
+  if (!response.output_parsed) throw new Error(`OpenAI returned no parsed ${name} output.`);
+  return schema.parse(response.output_parsed);
 }
 
 export async function enhanceWithOpenAI(base: SongWorldAnalysis, request: GenerateRequest): Promise<SongWorldAnalysis> {
