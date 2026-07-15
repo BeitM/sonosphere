@@ -1,0 +1,7 @@
+services:
+  audio-analysis:
+    build: ./services/audio-analysis
+    ports:
+      - "127.0.0.1:8788:8788"
+    environment:
+      AUDIO_ANALYSIS_TOKEN: ${AUDIO_ANALYSIS_TOKEN:-}

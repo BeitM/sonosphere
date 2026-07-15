@@ -8,9 +8,11 @@ export const aiEnabled = () => process.env.AI_MODE === "live" && Boolean(process
 async function structured<T>(name: string, schema: z.ZodType<T>, instructions: string, payload: unknown): Promise<T> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.parse({
-    model: process.env.OPENAI_MODEL || "gpt-5-mini",
+    model: process.env.OPENAI_MODEL || "gpt-5.6-terra",
+    reasoning: { effort: "low" },
     instructions,
     input: JSON.stringify(payload),
+    store: false,
     text: { format: zodTextFormat(schema, name) },
   });
   if (!response.output_parsed) throw new Error(`OpenAI returned no parsed ${name} output.`);
@@ -27,14 +29,14 @@ export async function enhanceWithOpenAI(base: SongWorldAnalysis, request: Genera
       music: base.music,
       evidenceWeights: base.weights,
       confidence: base.confidence,
-      userGuidance: { personalInterpretation: request.personalInterpretation, emphasisNote: request.emphasisNote, refinement: request.refinement },
+      userGuidance: { personalInterpretation: request.personalInterpretation, visualPreference: request.visualPreference, emphasisNote: request.emphasisNote, refinement: request.refinement },
     };
     const interpretation = await structured("song_interpretation", songInterpretationSchema,
-      "Interpret a song from weighted evidence. Attribute claims, keep fan readings uncertain, never reveal chain-of-thought, never quote copyrighted lyrics, and preserve uncertainty when evidence is weak. Return only the strict schema.", evidence);
+      "Create a grounded song interpretation from the supplied weighted evidence. Success means every claim reflects available music, lyrics, context, or user guidance; uncertain creator intent stays explicitly uncertain; copyrighted lyrics are never quoted; and the result matches the strict schema.", evidence);
     const spatialInterpretation = await structured("spatial_interpretation", spatialInterpretationSchema,
-      "Translate the supplied semantic interpretation and musical structure into one coherent navigable spatial metaphor. Use accessibility, distance, scale, material, openness, and persistent landmarks. Avoid music-video imitation and living-artist style references. Return only the strict schema.", { interpretation, music: base.music, refinement: request.refinement });
+      "Translate the supplied interpretation and musical structure into one coherent navigable spatial metaphor. Success means detected sections have connected spatial counterparts, accessibility and scale express the emotional arc, landmarks preserve orientation, and the result avoids music-video imitation and living-artist style references. Return only the strict schema.", { interpretation, music: base.music, refinement: request.refinement });
     const worldPrompt = await structured("world_prompt", worldPromptSchema,
-      "Write a concrete prompt for a static, explorable 3D base environment. Require connected areas, navigable paths, multiple viewpoints, foreground/midground/background, spatial continuity, persistent landmarks, and consistent architecture. Do not include lyrics, camera-shot framing, trademarked worlds, recognizable people, or timed animation. Preserve the supplied confidence and evidence weights exactly. Return only the strict schema.", { interpretation, spatialInterpretation, music: base.music, confidence: base.confidence, evidenceWeights: base.weights });
+      "Write a concrete prompt for a static, explorable 3D base environment. Success means the world has connected areas, navigable paths, multiple viewpoints, readable depth, spatial continuity, persistent landmarks, and consistent architecture. Exclude lyrics, camera-shot framing, trademarked worlds, recognizable people, and timed animation. Preserve confidence and evidence weights exactly. Return only the strict schema.", { interpretation, spatialInterpretation, music: base.music, confidence: base.confidence, evidenceWeights: base.weights });
     return { ...base, interpretation, spatialInterpretation, worldPrompt };
   } catch (error) {
     console.error("Structured AI generation failed; returning validated local fallback.", error instanceof Error ? error.message : "Unknown error");

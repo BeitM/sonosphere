@@ -12,6 +12,7 @@ Sonosphere is a prompt-generation prototype for translating song identity, lyric
 - `lib/providers/`: provider interfaces and mock implementations.
 - `lib/analysis/`: confidence, weighting, deterministic synthesis, and orchestration.
 - `lib/ai/openai.ts`: optional live Structured Output enhancement.
+- `services/audio-analysis/`: private FastAPI/librosa acoustic-analysis service.
 - `worker/index.ts`, `vite.config.ts`, `build/sites-vite-plugin.ts`: vinext/Cloudflare build and runtime integration. Despite its name, `build/` contains tracked source.
 - `tests/rendered-html.test.mjs`: built-worker integration tests.
 - `PROJECT_CONTEXT.md` and `ROADMAP.md`: detailed status and future decisions.
@@ -27,6 +28,11 @@ npm run build
 npm run lint
 npm run typecheck
 npm test
+
+# Audio service (Python 3.12; FFmpeg required for compressed audio)
+python -m venv .venv
+.venv\Scripts\pip install -r services/audio-analysis/requirements-dev.txt
+.venv\Scripts\python -m pytest services/audio-analysis/tests
 ```
 
 No formatter is configured. Do not introduce or apply a repository-wide formatter incidentally.
@@ -37,7 +43,8 @@ No formatter is configured. Do not introduce or apply a repository-wide formatte
 - Validate external requests, provider results, and AI results with the schemas in `lib/schemas.ts`.
 - Keep provider-specific SDK code behind `lib/providers/types.ts`; the analysis pipeline must not depend directly on a vendor adapter.
 - Keep credentials server-only. Do not add `NEXT_PUBLIC_` variants or log audio, lyrics, or secrets.
-- Preserve deterministic mock mode and validated fallback behavior when live services fail.
+- Preserve explicit deterministic fixture mode and validated fallback behavior when live AI fails.
+- Never use fixture-derived audio or lyrics for a real upload. Validate the audio service response before it enters the analysis pipeline.
 - Treat world generation, persistence, authentication, and audio-reactive rendering as separate future layers unless a task explicitly expands scope.
 - Inspect the schema, calling route, provider contract, pipeline, and relevant UI before changing shared data shapes.
 - Run the smallest relevant checks after a change; run lint, typecheck, and tests for cross-layer changes.
@@ -45,4 +52,4 @@ No formatter is configured. Do not introduce or apply a repository-wide formatte
 
 ## Known limitations
 
-Mock analysis is fixture-driven and does not inspect audio bytes. The main generation route does not receive the uploaded audio, several modular API routes are not used by the UI, local synthesis does not consume every refinement field, and automated coverage is currently limited to two integration tests. See `PROJECT_CONTEXT.md` for details.
+Real recognition, licensed lyrics, and live context research are not implemented. AZLyrics is exposed only as a user-opened search link because automated access is blocked and no licensed API is available. Audio reactivity and 3D generation remain separate future layers. See `PROJECT_CONTEXT.md` for details.

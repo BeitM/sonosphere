@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleAlert, Clipboard, Download, FileAudio, FileJson, Layers3, LoaderCircle, Music2, RotateCcw, Sparkles, Upload, X } from "lucide-react";
-import type { Refinement, SongIdentification, SongWorldAnalysis } from "@/lib/schemas";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleAlert, Clipboard, Download, ExternalLink, FileAudio, FileJson, Layers3, LoaderCircle, Music2, RotateCcw, Sparkles, Upload, X } from "lucide-react";
+import type { MusicalAnalysis, Refinement, SongIdentification, SongWorldAnalysis } from "@/lib/schemas";
 
 type Step = "upload" | "confirm" | "generating" | "results";
 type FixtureId = "known" | "obscure" | "instrumental";
@@ -16,7 +16,7 @@ const demos: Array<{ id: FixtureId; eyebrow: string; title: string; meta: string
   { id: "instrumental", eyebrow: "Unknown original", title: "Untitled Current", meta: "Sound-led interpretation", confidence: "8% match" },
 ];
 
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: React.ReactNode }) {
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
@@ -27,7 +27,7 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 function Header({ step, reset }: { step: Step; reset: () => void }) {
   return <header className="topbar">
     <button className="brand" onClick={reset} aria-label="Sonosphere home"><span className="brand-mark"><span /><span /><span /><span /></span><span>sonosphere</span></button>
-    <div className="topbar-right"><span className="mode"><span /> Development mode</span>{step !== "upload" && <button className="text-button" onClick={reset}>New analysis</button>}<a href="#privacy" className="text-link">Privacy</a></div>
+    <div className="topbar-right"><span className="mode"><span /> Analysis studio</span>{step !== "upload" && <button className="text-button" onClick={reset}>New analysis</button>}<a href="#privacy" className="text-link">Privacy</a></div>
   </header>;
 }
 
@@ -42,6 +42,7 @@ export function Studio() {
   const [step, setStep] = useState<Step>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [fixtureId, setFixtureId] = useState<FixtureId>("known");
+  const [useFixture, setUseFixture] = useState(false);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [album, setAlbum] = useState("");
@@ -53,12 +54,13 @@ export function Studio() {
   const [emphasis, setEmphasis] = useState("");
   const [refinement, setRefinement] = useState<Refinement>(defaults);
   const [analysis, setAnalysis] = useState<SongWorldAnalysis | null>(null);
+  const [musicAnalysis, setMusicAnalysis] = useState<MusicalAnalysis | null>(null);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const reset = () => { setStep("upload"); setFile(null); setIdentification(null); setAnalysis(null); setError(""); setTitle(""); setArtist(""); setAlbum(""); setManualLyrics(""); setManualContext(""); setPersonal(""); setVisualPreference(""); setEmphasis(""); setRefinement(defaults); };
+  const reset = () => { setStep("upload"); setFile(null); setUseFixture(false); setIdentification(null); setAnalysis(null); setMusicAnalysis(null); setError(""); setTitle(""); setArtist(""); setAlbum(""); setManualLyrics(""); setManualContext(""); setPersonal(""); setVisualPreference(""); setEmphasis(""); setRefinement(defaults); };
   const chooseFile = (next: File | null) => {
     setError("");
     if (!next) return;
@@ -66,21 +68,22 @@ export function Studio() {
     if (!supported) return setError("Use an MP3, WAV, M4A, or FLAC audio file.");
     if (!next.size) return setError("That file appears to be empty or unreadable.");
     if (next.size > maxBytes) return setError("Choose a file smaller than 25 MB for this prototype.");
-    setFile(next);
+    setFile(next); setUseFixture(false); setMusicAnalysis(null);
   };
 
   const identify = async (overrideFixture?: FixtureId) => {
     const selectedFixture = overrideFixture ?? fixtureId;
     let selectedFile = file;
-    if (!selectedFile && overrideFixture) {
+    if (overrideFixture) {
       const names = { known: "amazing-grace-demo.mp3", obscure: "glass-orchard-demo.mp3", instrumental: "unknown-original-instrumental.mp3" };
       selectedFile = new File(["sonosphere development fixture"], names[overrideFixture], { type: "audio/mpeg" });
       setFile(selectedFile);
     }
     if (!selectedFile) return setError("Choose an audio file or start with one of the development examples.");
-    setFixtureId(selectedFixture); setError(""); setStep("generating");
+    const fixture = Boolean(overrideFixture);
+    setFixtureId(selectedFixture); setUseFixture(fixture); setMusicAnalysis(null); setError(""); setStep("generating");
     try {
-      const body = new FormData(); body.append("audio", selectedFile); body.append("fixtureId", selectedFixture); body.append("title", title); body.append("artist", artist);
+      const body = new FormData(); body.append("audio", selectedFile); body.append("fixtureId", selectedFixture); body.append("useFixture", String(fixture)); body.append("title", title); body.append("artist", artist);
       const response = await fetch("/api/song/identify", { method: "POST", body });
       const json = await response.json() as SongIdentification & { error?: string }; if (!response.ok) throw new Error(json.error || "Identification failed.");
       setIdentification(json); setTitle(title || json.title || ""); setArtist(artist || json.artist || ""); setAlbum(album || json.album || ""); setStep("confirm");
@@ -91,7 +94,16 @@ export function Studio() {
     if (!identification) return;
     setError(""); setStep("generating");
     try {
-      const response = await fetch("/api/world/generate-prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fixtureId, identification, confirmed: { title, artist, album }, manualLyrics: manualLyrics || undefined, personalInterpretation: personal || undefined, visualPreference: visualPreference || undefined, emphasisNote: emphasis || undefined, manualContext: manualContext || undefined, refinement }) });
+      if (!file) throw new Error("The audio file is no longer available. Please select it again.");
+      let analyzedMusic = musicAnalysis;
+      if (!analyzedMusic) {
+        const audioBody = new FormData(); audioBody.append("audio", file); audioBody.append("fixtureId", fixtureId); audioBody.append("useFixture", String(useFixture));
+        const audioResponse = await fetch("/api/song/analyze-audio", { method: "POST", body: audioBody });
+        const audioJson = await audioResponse.json() as MusicalAnalysis & { error?: string };
+        if (!audioResponse.ok) throw new Error(audioJson.error || "Audio analysis failed.");
+        analyzedMusic = audioJson; setMusicAnalysis(audioJson);
+      }
+      const response = await fetch("/api/world/generate-prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fixtureId, useFixture, identification, musicAnalysis: analyzedMusic, confirmed: { title, artist, album }, manualLyrics: manualLyrics || undefined, personalInterpretation: personal || undefined, visualPreference: visualPreference || undefined, emphasisNote: emphasis || undefined, manualContext: manualContext || undefined, refinement }) });
       const json = await response.json() as SongWorldAnalysis & { error?: string }; if (!response.ok) throw new Error(json.error || "Prompt generation failed.");
       setAnalysis(json); setStep("results"); window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Prompt generation failed."); setStep("confirm"); }
@@ -99,6 +111,7 @@ export function Studio() {
 
   const copyPrompt = async () => { if (!analysis) return; await navigator.clipboard.writeText(analysis.worldPrompt.prompt); setCopied(true); setTimeout(() => setCopied(false), 1800); };
   const download = () => { if (!analysis) return; const url = URL.createObjectURL(new Blob([JSON.stringify(analysis, null, 2)], { type: "application/json" })); const link = document.createElement("a"); link.href = url; link.download = `${(title || "song").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-world-analysis.json`; link.click(); URL.revokeObjectURL(url); };
+  const azLyricsUrl = `https://search.azlyrics.com/search.php?q=${encodeURIComponent([title, artist].filter(Boolean).join(" "))}`;
 
   return <main><Header step={step} reset={reset} /><div className="page-shell"><Progress step={step} />
     {error && <div className="error-banner"><CircleAlert size={18} /><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}
@@ -116,9 +129,9 @@ export function Studio() {
           <div className="divider"><span>Optional details</span></div>
           <div className="field-grid"><Field label="Song title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="If you know it" /></Field><Field label="Artist"><input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="Artist name" /></Field></div>
           <button className="primary-button" onClick={() => identify()}><Sparkles size={17} /> Identify song <ArrowRight size={17} /></button>
-          <p className="privacy-note"><span>Private by design.</span> In mock mode, only the filename and basic file metadata reach the local server; the audio is not stored or sent to a third party.</p>
+          <p className="privacy-note"><span>Private by design.</span> Real analysis sends the temporary upload only to the configured audio-analysis service; the recording is not stored by Sonosphere.</p>
         </section>
-        <aside className="demo-panel"><div className="demo-heading"><p>Or explore a test case</p><span>DEVELOPMENT FIXTURES</span></div>{demos.map((demo) => <button className="demo-card" onClick={() => identify(demo.id)} key={demo.id}><span className={`demo-art art-${demo.id}`}><Music2 size={18} /></span><span className="demo-copy"><small>{demo.eyebrow}</small><strong>{demo.title}</strong><em>{demo.meta}</em></span><span className="demo-confidence">{demo.confidence}</span><ArrowRight size={17} /></button>)}<p className="demo-footnote">These fixtures let you test every fallback level before external providers are connected.</p></aside>
+        <aside className="demo-panel"><div className="demo-heading"><p>Or explore a test case</p><span>DEVELOPMENT FIXTURES</span></div>{demos.map((demo) => <button className="demo-card" onClick={() => identify(demo.id)} key={demo.id}><span className={`demo-art art-${demo.id}`}><Music2 size={18} /></span><span className="demo-copy"><small>{demo.eyebrow}</small><strong>{demo.title}</strong><em>{demo.meta}</em></span><span className="demo-confidence">{demo.confidence}</span><ArrowRight size={17} /></button>)}<p className="demo-footnote">These deterministic fixtures let you test every fallback level without external services.</p></aside>
       </div></section>}
     {step === "confirm" && identification && <section className="confirm-layout">
       <div className="section-intro"><button className="back-button" onClick={() => setStep("upload")}><ArrowLeft size={16} /> Back to upload</button><p className="kicker">Identity check</p><h1>Is this the right song?</h1><p>Confirm or correct the detected metadata. Your confirmed values always override recognition.</p></div>
@@ -127,7 +140,7 @@ export function Studio() {
         <div className="field-grid"><Field label="Confirmed title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Untitled" /></Field><Field label="Confirmed artist"><input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="Unknown artist" /></Field></div><Field label="Album"><input value={album} onChange={(e) => setAlbum(e.target.value)} placeholder="Optional" /></Field>
         {identification.alternatives && identification.alternatives.length > 1 && <details className="alternatives"><summary>Other possible matches <ChevronDown size={15} /></summary>{identification.alternatives.slice(1).map((match) => <button key={`${match.title}-${match.artist}`} onClick={() => { setTitle(match.title); setArtist(match.artist); }}>{match.title} — {match.artist}<span>{Math.round(match.confidence * 100)}%</span></button>)}</details>}
       </section>
-      <section className="panel guidance-panel"><div className="panel-heading"><div><span className="step-tag">02</span><h2>Shape the reading</h2></div><span className="optional">All optional</span></div><Field label="Personal interpretation"><textarea rows={3} value={personal} onChange={(e) => setPersonal(e.target.value)} placeholder="What does this song mean to you?" /></Field><Field label="Pasted lyrics" hint="Used for internal theme analysis. Accuracy and rights remain unverified."><textarea rows={3} value={manualLyrics} onChange={(e) => setManualLyrics(e.target.value)} placeholder="Paste lyrics for testing when a provider has none…" /></Field><Field label="Context or source note"><textarea rows={2} value={manualContext} onChange={(e) => setManualContext(e.target.value)} placeholder="Artist statement, album note, or factual context…" /></Field><div className="field-grid"><Field label="Visual preference"><input value={visualPreference} onChange={(e) => setVisualPreference(e.target.value)} placeholder="e.g. weathered stone" /></Field><Field label="Emphasize"><input value={emphasis} onChange={(e) => setEmphasis(e.target.value)} placeholder="e.g. restrained anger" /></Field></div></section></div>
+      <section className="panel guidance-panel"><div className="panel-heading"><div><span className="step-tag">02</span><h2>Shape the reading</h2></div><span className="optional">All optional</span></div><Field label="Personal interpretation"><textarea rows={3} value={personal} onChange={(e) => setPersonal(e.target.value)} placeholder="What does this song mean to you?" /></Field><Field label="Pasted lyrics" hint={<span>Used only for theme analysis. Paste text you have permission to use, or <a className="lyrics-source-link" href={azLyricsUrl} target="_blank" rel="noreferrer">find the song on AZLyrics <ExternalLink size={11} /></a>.</span>}><textarea rows={3} value={manualLyrics} onChange={(e) => setManualLyrics(e.target.value)} placeholder="Paste lyrics when available…" /></Field><Field label="Context or source note"><textarea rows={2} value={manualContext} onChange={(e) => setManualContext(e.target.value)} placeholder="Artist statement, album note, or factual context…" /></Field><div className="field-grid"><Field label="Visual preference"><input value={visualPreference} onChange={(e) => setVisualPreference(e.target.value)} placeholder="e.g. weathered stone" /></Field><Field label="Emphasize"><input value={emphasis} onChange={(e) => setEmphasis(e.target.value)} placeholder="e.g. restrained anger" /></Field></div></section></div>
       <section className="panel controls-panel"><div className="panel-heading"><div><span className="step-tag">03</span><h2>Set the creative balance</h2></div><span className="optional">You can change these later</span></div><div className="controls-grid">
         <SelectField label="Interpretation balance" value={refinement.balance} onChange={(value) => setRefinement({ ...refinement, balance: value as Refinement["balance"] })} options={[["balanced", "Balanced"], ["lyrics", "Emphasize lyrics"], ["music", "Emphasize musical sound"], ["context", "Emphasize external context"], ["personal", "Emphasize personal reading"]]} />
         <SelectField label="Visual realism" value={refinement.realism} onChange={(value) => setRefinement({ ...refinement, realism: value as Refinement["realism"] })} options={[["realistic", "Realistic"], ["cinematic", "Cinematic"], ["surreal", "Surreal"], ["abstract", "Abstract"], ["mixed", "Mixed"]]} />
@@ -137,7 +150,7 @@ export function Studio() {
         <Field label="Final guidance"><input value={refinement.userNote} onChange={(e) => setRefinement({ ...refinement, userNote: e.target.value })} placeholder="One last nuance to preserve" /></Field>
       </div><button className="primary-button wide" onClick={generate}><Sparkles size={17} /> Interpret song & build world prompt <ArrowRight size={17} /></button></section>
     </section>}
-    {step === "generating" && <section className="loading-state"><span className="loading-orbit"><LoaderCircle size={38} /></span><p className="kicker">Evidence synthesis</p><h1>{identification ? "Translating meaning into space…" : "Listening for a match…"}</h1><p>{identification ? "We’re combining lyrical, musical, contextual, and personal evidence into one coherent navigable world." : "Checking the development recognition provider and preparing a result you can confirm."}</p><div className="loading-lines"><span /><span /><span /></div></section>}
+    {step === "generating" && <section className="loading-state"><span className="loading-orbit"><LoaderCircle size={38} /></span><p className="kicker">Evidence synthesis</p><h1>{identification ? "Analyzing sound and translating it into space…" : "Listening for a match…"}</h1><p>{identification ? "We’re measuring the recording and combining its musical structure with available lyrics, context, and your guidance." : "Preparing an identity result for you to confirm."}</p><div className="loading-lines"><span /><span /><span /></div></section>}
     {step === "results" && analysis && <Results analysis={analysis} refinement={refinement} setRefinement={setRefinement} regenerate={generate} copy={copyPrompt} copied={copied} download={download} />}
   </div><footer id="privacy"><div><span className="brand small"><span className="brand-mark"><span /><span /><span /><span /></span><span>sonosphere</span></span><p>Music understanding for worlds not yet built.</p></div><p>Prototype phase · No permanent audio storage · No 3D generation</p></footer></main>;
 }

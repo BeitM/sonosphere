@@ -224,8 +224,10 @@ export const confirmedSongSchema = z.object({
 
 export const generateRequestSchema = z.object({
   fixtureId: z.enum(["known", "obscure", "instrumental"]).default("known"),
+  useFixture: z.boolean().default(false),
   identification: songIdentificationSchema,
   confirmed: confirmedSongSchema,
+  musicAnalysis: musicalAnalysisSchema.optional(),
   manualLyrics: z.string().max(12000).optional(),
   personalInterpretation: z.string().max(2000).optional(),
   visualPreference: z.string().max(500).optional(),

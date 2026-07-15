@@ -44,3 +44,9 @@ next-env.d.ts
 /.dev-out.log
 /.dev-err.log
 *.tsbuildinfo
+
+# python audio-analysis service
+/.venv/
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]

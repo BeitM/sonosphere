@@ -1,21 +1,24 @@
-import { providers } from "@/lib/providers/mock";
-import { songWorldAnalysisSchema, type GenerateRequest, type SongInterpretation, type SongWorldAnalysis, type SpatialInterpretation, type WorldPrompt } from "@/lib/schemas";
+import { providersFor } from "@/lib/providers/registry";
+import { songWorldAnalysisSchema, type GenerateRequest, type LyricsLookup, type MusicalAnalysis, type SongContext, type SongInterpretation, type SongWorldAnalysis, type SpatialInterpretation, type WorldPrompt } from "@/lib/schemas";
 import { calculateConfidence, calculateEvidenceWeights, fallbackLevel } from "./weights";
 import { enhanceWithOpenAI } from "@/lib/ai/openai";
 
 const pct = (n: number) => Math.round(n * 100);
-const contextCount = (context: Awaited<ReturnType<typeof providers.context.research>>) => Object.values(context).flat().length;
+const clamp = (n: number) => Math.min(1, Math.max(0, n));
+const contextCount = (context: SongContext) => Object.values(context).flat().length;
 
-function buildInterpretation(input: GenerateRequest, music: Awaited<ReturnType<typeof providers.music.analyze>>, lyrics: Awaited<ReturnType<typeof providers.lyrics.findLyrics>>, level: number): SongInterpretation {
+function buildInterpretation(input: GenerateRequest, music: MusicalAnalysis, lyrics: LyricsLookup, level: number): SongInterpretation {
   const hasWords = lyrics.available;
   const guidance = [input.personalInterpretation, input.emphasisNote, input.refinement.userNote].filter(Boolean).join(" ");
-  const isKnown = input.fixtureId === "known";
-  const isObscure = input.fixtureId === "obscure";
+  const isKnown = input.useFixture && input.fixtureId === "known";
+  const isObscure = input.useFixture && input.fixtureId === "obscure";
   const summary = isKnown
     ? "A passage from estrangement toward belonging, where transformation does not erase vulnerability but makes a wider world perceptible. The restrained opening and expanding harmony turn recognition into a physical sense of space opening around the listener."
     : isObscure
       ? "A meditation on protecting something delicate inside systems built for pressure and repetition. Fragility is not presented as weakness: the musical climax lets the mechanical and organic coexist without resolving their tension."
-      : "An instrumental journey from isolation into turbulent collective motion, followed by a changed stillness. With no reliable lyrics or identity, the interpretation rests on density, rhythm, dynamic contrast, and the listener's guidance.";
+      : input.useFixture
+        ? "An instrumental journey from isolation into turbulent collective motion, followed by a changed stillness. With no reliable lyrics or identity, the interpretation rests on density, rhythm, dynamic contrast, and the listener's guidance."
+        : `A sound-led interpretation of a ${music.mode} recording at ${music.tempoBpm ? `${Math.round(music.tempoBpm)} BPM` : "an uncertain tempo"}. Its ${music.overall.dynamicRange > 0.65 ? "wide" : "restrained"} dynamic range and changing section energy define the movement from the opening through the highest-intensity region and into the ending.`;
   const themes: SongInterpretation["coreThemes"] = isKnown
     ? [
         { name: "Transformation through recognition", description: "The central movement is from disorientation toward perception, expressed as a widening field of possible movement.", confidence: 0.92, evidenceSources: ["lyrics", "music", "published_interpretation"] },
@@ -26,24 +29,40 @@ function buildInterpretation(input: GenerateRequest, music: Awaited<ReturnType<t
           { name: "Fragility under pressure", description: "Transparent organic imagery meets dense, machine-like rhythm.", confidence: 0.86, evidenceSources: ["lyrics", "music"] },
           { name: "Preservation versus change", description: "The desire to protect becomes inseparable from the forces threatening it.", confidence: 0.72, evidenceSources: ["lyrics", "ai_inference"] },
         ]
-      : [
-          { name: "Accumulation and release", description: "Layered rhythm converts empty distance into overwhelming motion before dissolving.", confidence: 0.84, evidenceSources: ["music"] },
-          { name: "Changed return", description: "The ending resembles the opening but carries the resonance of the climax.", confidence: 0.77, evidenceSources: ["music", "ai_inference"] },
-        ];
+      : input.useFixture
+        ? [
+            { name: "Accumulation and release", description: "Layered rhythm converts empty distance into overwhelming motion before dissolving.", confidence: 0.84, evidenceSources: ["music"] },
+            { name: "Changed return", description: "The ending resembles the opening but carries the resonance of the climax.", confidence: 0.77, evidenceSources: ["music", "ai_inference"] },
+          ]
+        : [
+            { name: "Dynamic transformation", description: `The recording moves through ${music.sections.length} detected regions whose energy and tension create the primary narrative shape.`, confidence: music.confidence.sectionDetection, evidenceSources: ["music"] },
+            { name: `${music.mode === "minor" ? "Tonal tension" : music.mode === "major" ? "Tonal openness" : "Tonal ambiguity"}`, description: `The detected ${music.key ? `${music.key} ` : ""}${music.mode} center and ${music.overall.brightness > 0.55 ? "bright" : "muted"} spectrum establish the atmosphere without implying creator intent.`, confidence: Math.max(0.35, music.confidence.key), evidenceSources: ["music", "ai_inference"] },
+          ];
   if (guidance) themes.push({ name: "Listener emphasis", description: `User guidance suggests: ${guidance}`, confidence: 0.62, evidenceSources: ["user_guidance"] });
   return {
     summary,
     coreThemes: themes.map((theme) => ({ ...theme, evidenceSources: [...theme.evidenceSources] })),
     emotionalConflicts: isObscure
       ? [{ sideA: "Protection", sideB: "Transformation", explanation: "The same enclosure that shelters the delicate orchard can also prevent it from living." }]
+      : !input.useFixture
+        ? [{ sideA: "Restraint", sideB: "Release", explanation: "Measured changes in section energy, tension, and dynamic range create a contrast between enclosure and expansion without assigning a lyrical meaning." }]
       : [{ sideA: level === 4 ? "Solitude" : "Estrangement", sideB: level === 4 ? "Collective motion" : "Belonging", explanation: "The song makes the desired state perceptible before it becomes reachable." }],
-    narrativePerspective: hasWords ? "An intimate first-person witness moving through remembered limitation toward an altered understanding." : "A non-verbal environmental perspective inferred from musical motion.",
+    narrativePerspective: hasWords
+      ? input.useFixture ? "An intimate first-person witness moving through remembered limitation toward an altered understanding." : "A lyrical perspective is present in user-supplied text; detailed narrative claims depend on live semantic analysis."
+      : "A non-verbal environmental perspective inferred from musical motion.",
     recurringImages: isObscure
       ? [{ image: "transparent fruit", meaning: "Care made visible and therefore vulnerable", confidence: 0.82 }, { image: "distant machinery", meaning: "Pressure that is structural rather than villainous", confidence: 0.72 }]
       : isKnown
         ? [{ image: "a distant illuminated threshold", meaning: "Belonging that can be perceived before it can be entered", confidence: 0.86 }, { image: "surfaces becoming translucent", meaning: "Perception replacing certainty", confidence: 0.76 }]
-        : [{ image: "converging currents", meaning: "Independent pulses becoming a shared force", confidence: 0.78 }],
-    musicLyricsRelationship: { type: hasWords ? "evolving" : "unclear", explanation: hasWords ? "The arrangement begins smaller than the language's promise, then spatially expands until the musical world can hold that promise." : "No reliable lyric evidence is available; the arc is inferred only from musical structure." },
+        : input.useFixture
+          ? [{ image: "converging currents", meaning: "Independent pulses becoming a shared force", confidence: 0.78 }]
+          : [{ image: "connected regions of changing scale", meaning: "Measured changes in musical energy translated into spatial pressure", confidence: music.confidence.emotionalFeatures }],
+    musicLyricsRelationship: {
+      type: hasWords && input.useFixture ? "evolving" : "unclear",
+      explanation: hasWords
+        ? input.useFixture ? "The arrangement begins smaller than the language's promise, then spatially expands until the musical world can hold that promise." : "The acoustic structure and supplied lyrics remain separate evidence in the deterministic fallback; live semantic analysis may establish their relationship without assuming alignment."
+        : "No reliable lyric evidence is available; the arc is inferred only from musical structure.",
+    },
     emotionalArc: music.sections.map((section, index) => ({
       sectionId: section.id,
       emotionalState: index === 0 ? "watchful distance" : index === music.sections.length - 1 ? "altered calm" : section.energy > 0.8 ? "overwhelming confrontation" : section.tension > 0.65 ? "compressed uncertainty" : "tentative movement",
@@ -58,61 +77,66 @@ function buildInterpretation(input: GenerateRequest, music: Awaited<ReturnType<t
   };
 }
 
-function buildSpatial(input: GenerateRequest): SpatialInterpretation {
-  const obscure = input.fixtureId === "obscure";
-  const instrumental = input.fixtureId === "instrumental";
-  const setting = input.refinement.worldType !== "auto" ? `${input.refinement.worldType} environment` : obscure ? "a transparent orchard threaded through an abandoned precision works" : instrumental ? "a tidal plain of resonant stone and suspended metallic spans" : "a vast threshold-city carved into pale stone around a luminous inner sanctuary";
+function buildSpatial(input: GenerateRequest, music: MusicalAnalysis): SpatialInterpretation {
+  const obscure = input.useFixture && input.fixtureId === "obscure";
+  const instrumental = input.useFixture && input.fixtureId === "instrumental";
+  const realUpload = !input.useFixture;
+  const setting = input.refinement.worldType !== "auto" ? `${input.refinement.worldType} environment` : obscure ? "a transparent orchard threaded through an abandoned precision works" : instrumental ? "a tidal plain of resonant stone and suspended metallic spans" : realUpload ? "a continuous terrain of resonant stone, layered passages, and a distant orientation beacon" : "a vast threshold-city carved into pale stone around a luminous inner sanctuary";
   const scale = { intimate: 0.25, human: 0.45, monumental: 0.76, vast: 0.95 }[input.refinement.scale];
   return {
     centralSpatialMetaphor: {
-      concept: obscure ? "A living orchard inside an indifferent machine" : instrumental ? "Separate currents gathering into one navigable surge" : "A visible sanctuary reached by learning to perceive the path",
-      explanation: obscure ? "Organic chambers and mechanical corridors occupy the same structure, turning preservation into a spatial negotiation." : instrumental ? "Paths begin isolated, converge in a turbulent central basin, then separate again with shared resonance." : "Warmth remains visible across distance while walls, scale, and partial transparency change as understanding grows.",
+      concept: obscure ? "A living orchard inside an indifferent machine" : instrumental ? "Separate currents gathering into one navigable surge" : realUpload ? "A continuous landscape shaped by accumulating musical pressure" : "A visible sanctuary reached by learning to perceive the path",
+      explanation: obscure ? "Organic chambers and mechanical corridors occupy the same structure, turning preservation into a spatial negotiation." : instrumental ? "Paths begin isolated, converge in a turbulent central basin, then separate again with shared resonance." : realUpload ? "Detected changes in energy, tension, brightness, and density become connected regions of changing enclosure and scale." : "Warmth remains visible across distance while walls, scale, and partial transparency change as understanding grows.",
     },
     environmentConcept: { setting, worldType: input.refinement.realism === "realistic" ? "realistic" : input.refinement.realism === "abstract" ? "abstract" : input.refinement.realism === "mixed" ? "hybrid" : "surreal", description: `${setting}, designed as one continuous world whose regions embody the song's changing emotional pressure.` },
-    spatialQualities: { scale, openness: instrumental ? 0.86 : 0.64, isolation: 0.72, verticality: input.refinement.scale === "vast" ? 0.84 : 0.65, density: obscure ? 0.72 : 0.48, navigationalClarity: 0.74, distortion: input.refinement.realism === "abstract" ? 0.82 : input.refinement.realism === "surreal" ? 0.66 : 0.32 },
+    spatialQualities: { scale, openness: realUpload ? clamp(0.4 + music.overall.brightness * 0.35 - music.overall.density * 0.12) : instrumental ? 0.86 : 0.64, isolation: realUpload ? clamp(0.78 - music.overall.energy * 0.32) : 0.72, verticality: realUpload ? clamp(0.42 + music.overall.dynamicRange * 0.45) : input.refinement.scale === "vast" ? 0.84 : 0.65, density: realUpload ? music.overall.density : obscure ? 0.72 : 0.48, navigationalClarity: 0.74, distortion: input.refinement.realism === "abstract" ? 0.82 : input.refinement.realism === "surreal" ? 0.66 : 0.32 },
     palette: obscure
       ? { primaryColors: ["smoked glass", "deep pine", "oxidized iron"], accentColors: ["amber sap", "cold electric blue"], warmth: 0.38, saturation: 0.48, brightness: 0.45, contrast: 0.72 }
-      : { primaryColors: ["chalk limestone", "blue-grey shadow", "weathered silver"], accentColors: ["honeyed amber", "soft dawn gold"], warmth: 0.52, saturation: 0.35, brightness: 0.62, contrast: 0.68 },
-    atmosphere: { weather: "still air giving way to a broad crosswind", fog: 0.32, wind: 0.45, particulateDensity: 0.28, environmentalMotion: 0.38, visibility: 0.78 },
+      : { primaryColors: ["chalk limestone", "blue-grey shadow", "weathered silver"], accentColors: ["honeyed amber", "soft dawn gold"], warmth: realUpload ? music.overall.valence : 0.52, saturation: realUpload ? clamp(0.2 + music.overall.energy * 0.35) : 0.35, brightness: realUpload ? music.overall.brightness : 0.62, contrast: realUpload ? clamp(0.35 + music.overall.dynamicRange * 0.5) : 0.68 },
+    atmosphere: { weather: realUpload && music.overall.energy > 0.7 ? "pressurized crosswinds moving through exposed passages" : "still air giving way to a broad crosswind", fog: realUpload ? clamp(0.5 - music.overall.brightness * 0.3) : 0.32, wind: realUpload ? music.overall.rhythmicIntensity : 0.45, particulateDensity: realUpload ? clamp(music.overall.density * 0.45) : 0.28, environmentalMotion: realUpload ? music.overall.rhythmicIntensity : 0.38, visibility: realUpload ? clamp(0.58 + music.overall.brightness * 0.32) : 0.78 },
     symbolicElements: obscure
       ? [{ object: "glass-bearing trees", meaning: "Fragility that remains alive", placement: "repeated along the primary traversable route", prominence: 0.9 }, { object: "silent stamping press", meaning: "Pressure held in suspension", placement: "central landmark at the climax chamber", prominence: 0.82 }]
+      : realUpload
+        ? [{ object: "persistent orientation beacon", meaning: "Continuity across musical change", placement: "visible from the opening and every major detected region", prominence: 0.9 }, { object: "layered resonant walls", meaning: "Accumulated musical density", placement: "tightening around the route before the highest-energy region", prominence: 0.72 }]
       : [{ object: "luminous interior threshold", meaning: "Belonging visible across uncertainty", placement: "persistent landmark visible from most regions", prominence: 0.95 }, { object: "broken measuring walls", meaning: "Standards that once made the traveler feel too small", placement: "oversized structures surrounding the middle path", prominence: 0.75 }],
-    architecture: { style: obscure ? "botanical industrialism" : "monolithic sacred minimalism without religious iconography", materialLanguage: obscure ? ["smoked glass", "dark steel", "living wood", "amber resin"] : ["pale limestone", "brushed metal", "translucent mineral", "warm interior plaster"], scaleBehavior: `Begins human-scaled, becomes ${input.refinement.scale} at the emotional peak, then settles into legible proportions.`, transformationBehavior: "Use persistent changes in material transparency and structural openness; reserve timed animation for a later interactive phase." },
-    journey: { startingSpace: "A sheltered, acoustically implied antechamber with one distant landmark visible through a narrow opening.", development: "A connected path crosses repeating structures that gradually widen and reveal alternate routes without losing orientation.", climaxSpace: obscure ? "A vast glasshouse-machine hall where the primary organic and industrial systems meet." : "An exposed monumental basin beneath the persistent illuminated threshold, with oversized walls falling away from the path.", endingSpace: "A quieter elevated terrace that visually reconnects every traversed region and leaves the central landmark reachable but not over-explained." },
+    architecture: { style: obscure ? "botanical industrialism" : realUpload ? "layered acoustic monumentalism" : "monolithic sacred minimalism without religious iconography", materialLanguage: obscure ? ["smoked glass", "dark steel", "living wood", "amber resin"] : ["pale limestone", "brushed metal", "translucent mineral", "warm interior plaster"], scaleBehavior: `Begins human-scaled, becomes ${input.refinement.scale} at the emotional peak, then settles into legible proportions.`, transformationBehavior: "Use persistent changes in material transparency and structural openness; reserve timed animation for a later interactive phase." },
+    journey: { startingSpace: "A sheltered, acoustically implied antechamber with one distant landmark visible through a narrow opening.", development: "A connected path crosses repeating structures that gradually widen and reveal alternate routes without losing orientation.", climaxSpace: obscure ? "A vast glasshouse-machine hall where the primary organic and industrial systems meet." : realUpload ? "The largest detected musical region translated into an exposed basin where enclosure falls away and every prior route remains visible." : "An exposed monumental basin beneath the persistent illuminated threshold, with oversized walls falling away from the path.", endingSpace: "A quieter elevated terrace that visually reconnects every traversed region and leaves the central landmark reachable but not over-explained." },
   };
 }
 
-function buildWorldPrompt(input: GenerateRequest, interpretation: SongInterpretation, spatial: SpatialInterpretation, confidence: SongWorldAnalysis["confidence"], weights: SongWorldAnalysis["weights"]): WorldPrompt {
+function buildWorldPrompt(input: GenerateRequest, music: MusicalAnalysis, interpretation: SongInterpretation, spatial: SpatialInterpretation, confidence: SongWorldAnalysis["confidence"], weights: SongWorldAnalysis["weights"]): WorldPrompt {
   const symbols = spatial.symbolicElements.map((item) => `${item.object} (${item.meaning.toLowerCase()})`).join(" and ");
+  const acousticFoundation = `ACOUSTIC FOUNDATION: Shape region spacing around the measured ${music.tempoBpm ? `${Math.round(music.tempoBpm)} BPM pulse` : "uncertain pulse"} and ${music.key ? `${music.key} ` : ""}${music.mode} tonal center. Reflect measured ${music.overall.dynamicRange > 0.65 ? "wide" : "restrained"} dynamics, ${music.overall.brightness > 0.55 ? "bright" : "muted"} spectral character, and ${music.overall.density > 0.6 ? "dense" : "open"} texture through persistent scale, light, material, and enclosure—not timed animation.`;
   const prompt = `Create a coherent explorable 3D environment titled “${spatial.centralSpatialMetaphor.concept}.” Build ${spatial.environmentConcept.description} The world must be a navigable space made of connected areas with strong spatial continuity, multiple viewpoints, a clear walkable or traversable path, and a persistent landmark that maintains orientation.\n\nSPATIAL LAYOUT: Begin in ${spatial.journey.startingSpace} The foreground should use close, tactile ${spatial.architecture.materialLanguage.slice(0, 2).join(" and ")} surfaces. The midground develops through ${spatial.journey.development} The background must keep the central destination visible across changing elevation and partial occlusion. The climax occupies ${spatial.journey.climaxSpace} End in ${spatial.journey.endingSpace}\n\nVISUAL LANGUAGE: Use ${spatial.architecture.style} with consistent ${spatial.architecture.materialLanguage.join(", ")}. ${spatial.architecture.scaleBehavior} Use a palette of ${spatial.palette.primaryColors.join(", ")} with controlled accents of ${spatial.palette.accentColors.join(" and ")}. Lighting moves spatially from cool indirect ambient light in the opening region toward warmer volumetric illumination near the destination, while remaining persistent rather than time-synchronized. Atmosphere should provide depth through restrained fog, sparse particulate matter, and visible wind-shaped surfaces without obscuring navigation.\n\nSYMBOLIC SYSTEM: Limit the world to a few legible recurring elements: ${symbols}. Their placement must guide movement and clarify meaning through spatial function, not text labels. Express “${interpretation.coreThemes[0]?.name}” through changes in accessibility, distance, enclosure, and scale rather than literal illustration.\n\nMUSICAL REGIONS: Give each major song section a durable area in the same world. The opening is sparse and sheltered; developing sections introduce repetition and narrower passages; the highest-intensity section opens into the largest, most exposed region; the ending revisits earlier materials in a calmer, more comprehensible arrangement. Connect every region physically so the result reads as one explorable place, not separate tableaux. Preserve consistent architecture, terrain logic, landmark placement, and material behavior throughout.\n\nBASE-WORLD CONSTRAINT: Generate only the static or persistent base environment. Design clear zones where future music-synchronized lighting, particles, distortion, and structural motion could occur, but do not assume those timed systems exist. No single-view composition; support movement, return paths, alternate viewpoints, and readable foreground, midground, and background.`;
   return {
     title: spatial.centralSpatialMetaphor.concept,
     oneSentenceConcept: spatial.environmentConcept.description,
     interpretationSummary: interpretation.summary,
-    prompt,
+    prompt: input.useFixture ? prompt : prompt.replace("\n\nSPATIAL LAYOUT:", `\n\n${acousticFoundation}\n\nSPATIAL LAYOUT:`),
     negativePrompt: "No text, lyrics, signage, logos, recognizable people, living-artist style imitation, trademarked fictional settings, music-video recreation, disconnected dioramas, single-view composition, impossible non-navigable geometry, excessive unrelated symbols, or assumed timed animation.",
     scenePlan: { worldType: spatial.environmentConcept.worldType, setting: spatial.environmentConcept.setting, emotionalTone: interpretation.emotionalArc.map((arc) => arc.emotionalState).filter((value, index, all) => all.indexOf(value) === index), centralLandmark: spatial.symbolicElements[0]?.object ?? "persistent illuminated threshold", startingArea: spatial.journey.startingSpace, middleArea: spatial.journey.development, climaxArea: spatial.journey.climaxSpace, endingArea: spatial.journey.endingSpace },
     generationGuidance: { preserveSpatialContinuity: true, emphasizeNavigability: true, avoidSingleViewComposition: true, avoidTextInEnvironment: true, avoidRecognizablePeople: true },
     confidence, evidenceWeights: weights,
-    limitations: ["Development mode uses curated fixtures rather than live recognition, licensed lyrics, or acoustic feature extraction.", "The prompt defines a persistent base world; later systems must add timing, camera behavior, and audio reactivity.", ...(input.fixtureId === "instrumental" ? ["No reliable lyrics or external context were available; semantic claims are intentionally limited."] : [])],
+    limitations: [input.useFixture ? "Development mode uses curated fixtures rather than live recognition, licensed lyrics, or acoustic feature extraction." : "Musical features were extracted from the uploaded recording; semantic conclusions remain an interpretive synthesis rather than creator intent.", "The prompt defines a persistent base world; later systems must add timing, camera behavior, and audio reactivity.", ...(!input.useFixture && !input.manualLyrics ? ["No lyrics were supplied; the interpretation is primarily sound-led."] : []), ...(input.useFixture && input.fixtureId === "instrumental" ? ["No reliable lyrics or external context were available; semantic claims are intentionally limited."] : [])],
   };
 }
 
 export async function runAnalysis(input: GenerateRequest): Promise<SongWorldAnalysis> {
+  const providers = providersFor(input.useFixture);
   const title = input.confirmed.title || input.identification.title;
   const artist = input.confirmed.artist || input.identification.artist;
   const [lyrics, context, music] = await Promise.all([
     providers.lyrics.findLyrics({ title, artist, manualLyrics: input.manualLyrics, fixtureId: input.fixtureId }),
     providers.context.research({ title, artist, manualContext: input.manualContext, fixtureId: input.fixtureId }),
-    providers.music.analyze({ fixtureId: input.fixtureId }),
+    input.musicAnalysis ? Promise.resolve(input.musicAnalysis) : providers.music.analyze({ fixtureId: input.fixtureId }),
   ]);
   const confidence = calculateConfidence({ identification: input.identification.confidence, lyrics: lyrics.confidence, music: music.confidence.emotionalFeatures, contextCount: contextCount(context), artistStatementCount: context.artistStatements.length, transcription: lyrics.sourceKind === "transcription" ? lyrics.confidence : 0 });
   const hasGuidance = Boolean(input.personalInterpretation || input.emphasisNote || input.refinement.userNote);
   const weights = calculateEvidenceWeights(confidence, hasGuidance, input.refinement.balance);
   const level = fallbackLevel(confidence);
   const interpretation = buildInterpretation(input, music, lyrics, level);
-  const spatialInterpretation = buildSpatial(input);
-  const worldPrompt = buildWorldPrompt(input, interpretation, spatialInterpretation, confidence, weights);
+  const spatialInterpretation = buildSpatial(input, music);
+  const worldPrompt = buildWorldPrompt(input, music, interpretation, spatialInterpretation, confidence, weights);
   const base = songWorldAnalysisSchema.parse({
     song: { identification: input.identification, confirmedTitle: title, confirmedArtist: artist }, lyrics, context, music, confidence, weights, interpretation, spatialInterpretation, worldPrompt, fallbackLevel: level,
     evidenceSummary: [
