@@ -31,6 +31,7 @@ def test_analyzes_synthetic_click_track(tmp_path: Path) -> None:
     assert 100 <= result["tempoBpm"] <= 140
     assert result["durationSeconds"] > 10
     assert len(result["sections"]) >= 3
-    assert result["sections"][0]["label"] == "intro"
-    assert result["sections"][-1]["label"] == "outro"
+    assert result["sections"][0]["label"] == "opening"
+    assert result["sections"][-1]["label"] == "ending"
+    assert all(section["label"] in {"opening", "development", "ending"} for section in result["sections"])
     assert all(0 <= value <= 1 for value in result["overall"].values())

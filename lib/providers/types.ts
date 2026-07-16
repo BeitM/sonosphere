@@ -2,7 +2,7 @@ import type { LyricsLookup, MusicalAnalysis, SongContext, SongIdentification } f
 
 export type AudioInput = { name: string; type: string; size: number; bytes?: ArrayBuffer };
 export type SongRecognitionInput = { audio: AudioInput; manualTitle?: string; manualArtist?: string; fixtureId?: string };
-export type LyricsLookupInput = { title?: string; artist?: string; manualLyrics?: string; fixtureId?: string };
+export type LyricsLookupInput = { title?: string; artist?: string; album?: string; durationSeconds?: number; manualLyrics?: string; fixtureId?: string };
 export type ContextResearchInput = { title?: string; artist?: string; manualContext?: string; fixtureId?: string };
 export type MusicAnalysisInput = { audio?: AudioInput; fixtureId?: string };
 

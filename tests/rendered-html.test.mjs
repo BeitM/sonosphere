@@ -33,16 +33,37 @@ test("unknown instrumental uses fallback level four and normalized weights", asy
   const json = await response.json();
   assert.equal(json.fallbackLevel, 4);
   assert.ok(json.worldPrompt.prompt.includes("explorable 3D environment"));
+  assert.ok(json.worldPrompt.marblePrompt.length <= 1800);
+  assert.match(json.worldPrompt.marblePrompt, /Hard scale rule: vast/i);
+  assert.match(json.worldPrompt.marblePrompt, /one static, explorable/i);
+  assert.match(json.worldPrompt.marblePrompt, /Spatial topology:/i);
+  assert.ok(["linear", "looping", "branching", "radial", "layered", "distributed"].includes(json.spatialInterpretation.journey.topology));
+  assert.ok(json.spatialInterpretation.journey.areas.length >= 2);
+  assert.equal("climaxSpace" in json.spatialInterpretation.journey, false);
   assert.ok(json.worldPrompt.generationGuidance.preserveSpatialContinuity);
   const total = Object.values(json.weights).reduce((sum, value) => sum + value, 0);
   assert.ok(Math.abs(total - 1) < 1e-10);
+});
+
+test("multipart identification accepts audio bodies larger than vinext's default one megabyte", async () => {
+  const body = new FormData();
+  body.append("audio", new Blob([new Uint8Array(2 * 1024 * 1024)], { type: "audio/mpeg" }), "upload.mp3");
+  body.append("useFixture", "false");
+  body.append("title", "Upload test");
+  body.append("artist", "Test artist");
+  const response = await (await worker()).fetch(new Request("http://localhost/api/song/identify", { method: "POST", body }), env, ctx);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /application\/json/);
+  const json = await response.json();
+  assert.equal(json.provider, "User-confirmed identity");
+  assert.equal(json.confidence, 1);
 });
 
 test("real-upload generation consumes supplied acoustic analysis", async () => {
   const body = {
     fixtureId: "known",
     useFixture: false,
-    identification: { title: "Signal Garden", artist: "Test Artist", confidence: 0.65, provider: "User-supplied identity", alternatives: [] },
+    identification: { title: "Signal Garden", artist: "Test Artist", confidence: 1, provider: "User-confirmed identity", alternatives: [] },
     confirmed: { title: "Signal Garden", artist: "Test Artist", album: "" },
     musicAnalysis: {
       durationSeconds: 180,
@@ -59,6 +80,7 @@ test("real-upload generation consumes supplied acoustic analysis", async () => {
       confidence: { tempo: 0.9, key: 0.7, sectionDetection: 0.66, emotionalFeatures: 0.62 },
       provider: "Sonosphere librosa analyzer v1",
     },
+    manualLyrics: "Fabricated test lyrics supplied only to keep this integration test offline.",
     refinement: { balance: "music", realism: "mixed", scale: "vast", intensity: "intense", worldType: "auto", userNote: "" },
   };
   const response = await (await worker()).fetch(new Request("http://localhost/api/world/generate-prompt", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), env, ctx);
@@ -67,6 +89,10 @@ test("real-upload generation consumes supplied acoustic analysis", async () => {
   assert.equal(json.music.provider, "Sonosphere librosa analyzer v1");
   assert.match(json.interpretation.summary, /124 BPM/);
   assert.match(json.worldPrompt.prompt, /124 BPM pulse/);
+  assert.ok(json.worldPrompt.marblePrompt.length <= 1800);
+  assert.match(json.worldPrompt.marblePrompt, /Hard scale rule: vast/i);
+  assert.doesNotMatch(json.worldPrompt.marblePrompt, /(.{300,})\1/s);
+  assert.doesNotMatch(json.worldPrompt.prompt, /highest-intensity section opens into the largest/i);
   assert.match(json.worldPrompt.limitations.join(" "), /extracted from the uploaded recording/i);
   assert.doesNotMatch(json.worldPrompt.limitations.join(" "), /curated fixtures/i);
 });

@@ -8,6 +8,7 @@ import {
   ManualRecognitionProvider,
   UnconfiguredMusicAnalysisProvider,
 } from "./live";
+import { LrclibLyricsProvider } from "./lrclib";
 
 const music = process.env.MUSIC_ANALYSIS_PROVIDER === "http"
   ? new HttpMusicAnalysisProvider()
@@ -15,7 +16,7 @@ const music = process.env.MUSIC_ANALYSIS_PROVIDER === "http"
 
 export const liveProviders = {
   recognition: new ManualRecognitionProvider(),
-  lyrics: new ManualLyricsProvider(),
+  lyrics: process.env.LYRICS_PROVIDER === "manual" ? new ManualLyricsProvider() : new LrclibLyricsProvider(),
   context: new EmptyContextProvider(),
   music,
 };

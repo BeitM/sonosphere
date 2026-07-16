@@ -169,15 +169,10 @@ def analyze_audio(path: str | Path) -> dict[str, object]:
         })
 
     if raw_sections:
-        raw_sections[0]["label"] = "intro"
-        raw_sections[-1]["label"] = "outro"
-        internal = raw_sections[1:-1]
-        if internal:
-            peak = max(internal, key=lambda section: float(section["energy"]))
-            peak["label"] = "chorus"
-            quiet = min(internal, key=lambda section: float(section["energy"]))
-            if quiet is not peak and float(quiet["energy"]) + 0.18 < float(peak["energy"]):
-                quiet["label"] = "breakdown"
+        raw_sections[0]["label"] = "opening"
+        raw_sections[-1]["label"] = "ending"
+        for section in raw_sections[1:-1]:
+            section["label"] = "development"
 
     onset_frames = librosa.onset.onset_detect(onset_envelope=onset, sr=sample_rate, hop_length=HOP_LENGTH)
     candidates = sorted(onset_frames, key=lambda frame: float(onset[min(frame, len(onset) - 1)]), reverse=True)

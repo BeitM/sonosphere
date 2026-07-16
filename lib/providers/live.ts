@@ -7,7 +7,7 @@ import type {
 } from "./types";
 
 export class ManualRecognitionProvider implements SongRecognitionProvider {
-  readonly name = "User-supplied identity";
+  readonly name = "User-confirmed identity";
 
   async identifySong(input: Parameters<SongRecognitionProvider["identifySong"]>[0]) {
     const title = input.manualTitle?.trim();
@@ -15,7 +15,7 @@ export class ManualRecognitionProvider implements SongRecognitionProvider {
     return {
       title: title || undefined,
       artist: artist || undefined,
-      confidence: title && artist ? 0.65 : title || artist ? 0.35 : 0.05,
+      confidence: title && artist ? 1 : title || artist ? 0.6 : 0.05,
       provider: this.name,
       alternatives: [],
     };

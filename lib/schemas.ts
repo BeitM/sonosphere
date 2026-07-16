@@ -28,7 +28,7 @@ export const lyricsLookupSchema = z.object({
     text: z.string(),
   })).optional(),
   source: z.string().optional(),
-  sourceKind: z.enum(["licensed", "public_domain", "manual", "transcription", "unavailable"]),
+  sourceKind: z.enum(["licensed", "public_domain", "community", "manual", "transcription", "unavailable"]),
   licensed: z.boolean(),
   confidence: normalized,
   displayNotice: z.string(),
@@ -51,7 +51,7 @@ export const songContextSchema = z.object({
 
 export const musicalSectionSchema = z.object({
   id: z.string(),
-  label: z.enum(["intro", "verse", "pre_chorus", "chorus", "bridge", "instrumental", "breakdown", "outro", "unknown"]),
+  label: z.enum(["opening", "development", "ending", "intro", "verse", "pre_chorus", "chorus", "bridge", "instrumental", "breakdown", "outro", "unknown"]),
   startTime: z.number().nonnegative(),
   endTime: z.number().nonnegative(),
   energy: normalized,
@@ -122,7 +122,7 @@ export const songInterpretationSchema = z.object({
     evidenceSources: z.array(z.enum(["lyrics", "music", "artist_statement", "published_interpretation", "common_interpretation", "user_guidance", "ai_inference"])),
   })),
   emotionalConflicts: z.array(z.object({ sideA: z.string(), sideB: z.string(), explanation: z.string() })),
-  narrativePerspective: z.string().optional(),
+  narrativePerspective: z.string().nullable(),
   recurringImages: z.array(z.object({ image: z.string(), meaning: z.string(), confidence: normalized })),
   musicLyricsRelationship: z.object({
     type: z.enum(["aligned", "contrasting", "evolving", "unclear"]),
@@ -162,7 +162,7 @@ export const spatialInterpretationSchema = z.object({
     contrast: normalized,
   }),
   atmosphere: z.object({
-    weather: z.string().optional(),
+    weather: z.string().nullable(),
     fog: normalized,
     wind: normalized,
     particulateDensity: normalized,
@@ -176,7 +176,18 @@ export const spatialInterpretationSchema = z.object({
     scaleBehavior: z.string(),
     transformationBehavior: z.string(),
   }),
-  journey: z.object({ startingSpace: z.string(), development: z.string(), climaxSpace: z.string(), endingSpace: z.string() }),
+  journey: z.object({
+    topology: z.enum(["linear", "looping", "branching", "radial", "layered", "distributed"]),
+    transformationLogic: z.string(),
+    entryExperience: z.string(),
+    areas: z.array(z.object({
+      name: z.string(),
+      role: z.enum(["entry", "connector", "focal", "counterpoint", "return", "reflective"]),
+      description: z.string(),
+      connections: z.array(z.string()),
+    })),
+    orientationStrategy: z.string(),
+  }),
 });
 
 export const worldPromptSchema = z.object({
@@ -184,16 +195,17 @@ export const worldPromptSchema = z.object({
   oneSentenceConcept: z.string(),
   interpretationSummary: z.string(),
   prompt: z.string(),
-  negativePrompt: z.string().optional(),
+  marblePrompt: z.string().describe("A non-repeating, single-location World Labs Marble prompt that must remain at or below 1,800 characters."),
+  negativePrompt: z.string().nullable(),
   scenePlan: z.object({
     worldType: z.string(),
     setting: z.string(),
     emotionalTone: z.array(z.string()),
     centralLandmark: z.string(),
-    startingArea: z.string(),
-    middleArea: z.string(),
-    climaxArea: z.string(),
-    endingArea: z.string(),
+    topology: z.enum(["linear", "looping", "branching", "radial", "layered", "distributed"]),
+    transformationLogic: z.string(),
+    areas: z.array(z.object({ name: z.string(), role: z.string(), description: z.string(), connections: z.array(z.string()) })),
+    orientationStrategy: z.string(),
   }),
   generationGuidance: z.object({
     preserveSpatialContinuity: z.boolean(),

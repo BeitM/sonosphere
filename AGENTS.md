@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Sonosphere is a prompt-generation prototype for translating song identity, lyrics, context, musical structure, and user guidance into a validated `SongWorldAnalysis` and an explorable 3D-world prompt. It does not render 3D worlds or persist user data.
+Sonosphere translates song identity, lyrics, context, musical structure, and user guidance into a validated `SongWorldAnalysis` and an explorable 3D-world prompt. It can optionally submit that prompt to World Labs and render the resulting SPZ in SparkJS; it does not persist application data.
 
 ## Important paths
 
@@ -12,6 +12,7 @@ Sonosphere is a prompt-generation prototype for translating song identity, lyric
 - `lib/providers/`: provider interfaces and mock implementations.
 - `lib/analysis/`: confidence, weighting, deterministic synthesis, and orchestration.
 - `lib/ai/openai.ts`: optional live Structured Output enhancement.
+- `lib/worldlabs/`, `app/world-generation.tsx`, `app/world-viewer.tsx`: paid generation boundary and embedded viewer.
 - `services/audio-analysis/`: private FastAPI/librosa acoustic-analysis service.
 - `worker/index.ts`, `vite.config.ts`, `build/sites-vite-plugin.ts`: vinext/Cloudflare build and runtime integration. Despite its name, `build/` contains tracked source.
 - `tests/rendered-html.test.mjs`: built-worker integration tests.
@@ -45,11 +46,12 @@ No formatter is configured. Do not introduce or apply a repository-wide formatte
 - Keep credentials server-only. Do not add `NEXT_PUBLIC_` variants or log audio, lyrics, or secrets.
 - Preserve explicit deterministic fixture mode and validated fallback behavior when live AI fails.
 - Never use fixture-derived audio or lyrics for a real upload. Validate the audio service response before it enters the analysis pipeline.
-- Treat world generation, persistence, authentication, and audio-reactive rendering as separate future layers unless a task explicitly expands scope.
+- Keep World Labs generation explicit and private by default. Never expose its key client-side or automatically retry a paid start request.
+- Treat persistence, authentication, collider navigation, and audio-reactive rendering as separate layers unless a task explicitly expands scope.
 - Inspect the schema, calling route, provider contract, pipeline, and relevant UI before changing shared data shapes.
 - Run the smallest relevant checks after a change; run lint, typecheck, and tests for cross-layer changes.
 - Do not delete ignored outputs or empty scaffold directories without confirming their local use.
 
 ## Known limitations
 
-Real recognition, licensed lyrics, and live context research are not implemented. AZLyrics is exposed only as a user-opened search link because automated access is blocked and no licensed API is available. Audio reactivity and 3D generation remain separate future layers. See `PROJECT_CONTEXT.md` for details.
+Real recognition, licensed lyrics, and live context research are not implemented. Best-effort community lyrics are looked up through LRCLIB; manual text takes priority, while AZLyrics and Genius remain user-opened fallback links. The SparkJS viewer is orbit-based; collider walking and audio reactivity are future layers. See `PROJECT_CONTEXT.md` for details.
