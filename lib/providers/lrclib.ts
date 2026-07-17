@@ -15,10 +15,10 @@ const lrclibTrackSchema = z.object({
   syncedLyrics: z.string().nullable(),
 });
 
-const lrclibSearchSchema = z.array(lrclibTrackSchema);
-
 type LrclibTrack = z.infer<typeof lrclibTrackSchema>;
 type Fetcher = typeof fetch;
+const lyricCache = new Map<string, { expiresAt: number; result: LyricsLookup }>();
+const CACHE_TTL_MS = 15 * 60 * 1_000;
 
 const normalize = (value?: string | null) => (value ?? "")
   .normalize("NFKD")
@@ -48,6 +48,18 @@ function matchScore(track: LrclibTrack, input: LyricsLookupInput) {
   return Math.min(score, 0.98);
 }
 
+function cacheKey(input: LyricsLookupInput) {
+  return [normalize(input.title), normalize(input.artist), normalize(input.album), input.durationSeconds ? Math.round(input.durationSeconds) : ""].join("|");
+}
+
+function validTracks(input: unknown) {
+  const rows = z.array(z.unknown()).parse(input);
+  return rows.flatMap((row) => {
+    const parsed = lrclibTrackSchema.safeParse(row);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
 export class LrclibLyricsProvider implements LyricsProvider {
   readonly name = "LRCLIB community lyrics";
   private readonly manual = new ManualLyricsProvider();
@@ -55,6 +67,23 @@ export class LrclibLyricsProvider implements LyricsProvider {
 
   constructor(fetcher: Fetcher = globalThis.fetch) {
     this.fetcher = bindRuntimeFetch(fetcher);
+  }
+
+  private async search(url: URL) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await this.fetcher(url, {
+          headers: { "User-Agent": "Sonosphere/0.1 (local music-analysis prototype)" },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (response.ok || (response.status !== 429 && response.status < 500)) return response;
+        lastError = new Error(`LRCLIB returned HTTP ${response.status}.`);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("LRCLIB could not be reached.");
   }
 
   async findLyrics(input: LyricsLookupInput): Promise<LyricsLookup> {
@@ -66,15 +95,17 @@ export class LrclibLyricsProvider implements LyricsProvider {
     const url = new URL("https://lrclib.net/api/search");
     url.searchParams.set("track_name", input.title.trim());
     url.searchParams.set("artist_name", input.artist.trim());
+    const key = cacheKey(input);
+    const cached = lyricCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return structuredClone(cached.result);
+    if (cached) lyricCache.delete(key);
 
     try {
-      const response = await this.fetcher(url, {
-        headers: { "User-Agent": "Sonosphere/0.1 (local music-analysis prototype)" },
-        signal: AbortSignal.timeout(8_000),
-      });
+      const response = await this.search(url);
       if (!response.ok) return unavailable(`LRCLIB lyric lookup returned HTTP ${response.status}; continuing without lyrics.`);
 
-      const tracks = lrclibSearchSchema.parse(await response.json());
+      const tracks = validTracks(await response.json());
+      if (!tracks.length) return unavailable("LRCLIB returned no valid lyric records; continuing without lyrics.");
       const ranked = tracks
         .map((track) => ({ track, score: matchScore(track, input) }))
         .filter((candidate) => candidate.score >= 0)
@@ -85,7 +116,7 @@ export class LrclibLyricsProvider implements LyricsProvider {
 
       const lyrics = best.track.plainLyrics?.trim();
       if (!lyrics) return unavailable("LRCLIB matched the recording but did not provide plain lyrics.");
-      return {
+      const result: LyricsLookup = {
         available: true,
         lyrics,
         source: `LRCLIB · ${best.track.trackName} — ${best.track.artistName}`,
@@ -94,9 +125,12 @@ export class LrclibLyricsProvider implements LyricsProvider {
         confidence: best.score,
         displayNotice: "Automatically matched community-contributed lyrics from LRCLIB; verify exact wording before relying on it.",
       };
+      lyricCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, result });
+      return structuredClone(result);
     } catch (error) {
       console.error("LRCLIB lyric lookup failed.", error instanceof Error ? error.message : "Unknown error");
-      return unavailable("LRCLIB lyric lookup was unavailable or returned invalid data; continuing without lyrics.");
+      const timedOut = error instanceof Error && /timeout|timed out|abort/i.test(`${error.name} ${error.message}`);
+      return unavailable(timedOut ? "LRCLIB lyric lookup timed out twice; continuing without lyrics." : "LRCLIB lyric lookup was unavailable or returned invalid data; continuing without lyrics.");
     }
   }
 }
