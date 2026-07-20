@@ -2,10 +2,22 @@ import { z } from "zod";
 
 export const worldLabsModelSchema = z.enum(["marble-1.0-draft", "marble-1.1", "marble-1.1-plus"]);
 
+const referenceImageSchema = z.object({
+  dataBase64: z.string().min(100).max(10 * 1024 * 1024 * 4 / 3 + 4).regex(/^[A-Za-z0-9+/]+={0,2}$/, "Reference image must be base64-encoded."),
+  extension: z.enum(["jpg", "jpeg", "png", "webp"]),
+  isPanorama: z.boolean().default(false),
+  azimuth: z.number().min(0).max(360).optional(),
+});
+
 export const worldLabsGenerateRequestSchema = z.object({
   prompt: z.string().min(20).max(2_000),
   displayName: z.string().min(1).max(64),
   model: worldLabsModelSchema.default("marble-1.1-plus"),
+  referenceImages: z.array(referenceImageSchema).max(4).default([]),
+}).superRefine((input, context) => {
+  if (input.referenceImages.length > 1 && input.referenceImages.some((image) => image.isPanorama)) {
+    context.addIssue({ code: "custom", path: ["referenceImages"], message: "A panorama must be submitted as the only reference image." });
+  }
 });
 
 const semanticsSchema = z.object({
@@ -57,6 +69,7 @@ export const rawWorldLabsOperationSchema = z.object({
 }).passthrough();
 
 export type WorldLabsModel = z.infer<typeof worldLabsModelSchema>;
+export type WorldLabsReferenceImage = z.infer<typeof referenceImageSchema>;
 
 export type WorldLabsWorld = {
   worldId: string;
@@ -82,10 +95,10 @@ export type WorldLabsOperation = {
   world: WorldLabsWorld | null;
 };
 
-export const WORLD_LABS_MODELS: Record<WorldLabsModel, { label: string; credits: string; note: string }> = {
-  "marble-1.0-draft": { label: "Marble 1.0 Draft", credits: "230 credits", note: "Low-credit pipeline test" },
-  "marble-1.1": { label: "Marble 1.1", credits: "1,580 credits", note: "Standard world generation" },
-  "marble-1.1-plus": { label: "Marble 1.1 Plus", credits: "1,580–3,080 credits", note: "Dynamic sizing for larger worlds" },
+export const WORLD_LABS_MODELS: Record<WorldLabsModel, { label: string; credits: string; panoramaCredits: string; note: string }> = {
+  "marble-1.0-draft": { label: "Marble 1.0 Draft", credits: "230 credits", panoramaCredits: "150 credits", note: "Low-credit pipeline test" },
+  "marble-1.1": { label: "Marble 1.1", credits: "1,580 credits", panoramaCredits: "1,500 credits", note: "Standard world generation" },
+  "marble-1.1-plus": { label: "Marble 1.1 Plus", credits: "1,580–3,080 credits", panoramaCredits: "1,500–3,000 credits", note: "Dynamic sizing for larger worlds" },
 };
 
 export function normalizeWorldLabsOperation(input: unknown): WorldLabsOperation {

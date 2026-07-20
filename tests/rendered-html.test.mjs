@@ -36,8 +36,8 @@ test("unknown instrumental uses fallback level four and normalized weights", asy
   assert.ok(json.worldPrompt.marblePrompt.length <= 1800);
   assert.match(json.worldPrompt.marblePrompt, /Hard scale rule: vast/i);
   assert.match(json.worldPrompt.marblePrompt, /one static, explorable/i);
-  assert.match(json.worldPrompt.marblePrompt, /Spatial topology:/i);
   assert.ok(["linear", "looping", "branching", "radial", "layered", "distributed"].includes(json.spatialInterpretation.journey.topology));
+  assert.match(json.worldPrompt.marblePrompt, new RegExp(`${json.spatialInterpretation.journey.topology} topology`, "i"));
   assert.ok(json.spatialInterpretation.journey.areas.length >= 2);
   assert.equal("climaxSpace" in json.spatialInterpretation.journey, false);
   assert.ok(json.worldPrompt.generationGuidance.preserveSpatialContinuity);

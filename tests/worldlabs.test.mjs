@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildReferenceImagePrompt } from "../lib/reference-images.ts";
 import { getWorldGeneration, requireGenerationAccess, startWorldGeneration, WorldLabsRequestError } from "../lib/worldlabs/client.ts";
-import { normalizeWorldLabsOperation } from "../lib/worldlabs/schemas.ts";
+import { normalizeWorldLabsOperation, worldLabsGenerateRequestSchema } from "../lib/worldlabs/schemas.ts";
 
 const originalApiKey = process.env.WORLD_LABS_API_KEY;
 const originalApiUrl = process.env.WORLD_LABS_API_URL;
@@ -53,6 +54,73 @@ test("starts one private text generation with the selected Marble model", async 
     text_prompt: "A connected nocturnal garden with one luminous orientation landmark.",
     disable_recaption: true,
   });
+});
+
+test("submits one panorama with the text prompt as image-conditioned generation", async () => {
+  let captured;
+  const fetcher = async (url, init) => {
+    captured = { url, init };
+    return Response.json({ operation_id: "panorama-operation", done: false, error: null, metadata: null, response: null });
+  };
+  const image = { dataBase64: "c29ub3NwaGVyZS1wYW5vcmFtYQ==", extension: "jpg", isPanorama: true };
+
+  await startWorldGeneration({
+    prompt: "A coherent nocturnal garden with a clear ground plane and luminous landmark.",
+    displayName: "Panorama world",
+    model: "marble-1.1-plus",
+    referenceImages: [image],
+  }, fetcher);
+
+  const body = JSON.parse(captured.init.body);
+  assert.deepEqual(body.world_prompt, {
+    type: "image",
+    image_prompt: { source: "data_base64", data_base64: image.dataBase64, extension: "jpg" },
+    is_pano: true,
+    text_prompt: "A coherent nocturnal garden with a clear ground plane and luminous landmark.",
+    disable_recaption: true,
+  });
+});
+
+test("supports complementary directional images without treating them as panoramas", async () => {
+  let body;
+  const fetcher = async (_url, init) => {
+    body = JSON.parse(init.body);
+    return Response.json({ operation_id: "multi-image-operation", done: false, error: null, metadata: null, response: null });
+  };
+  await startWorldGeneration({
+    prompt: "A coherent environment seen from complementary directions with matching materials.",
+    displayName: "Multi-image world",
+    model: "marble-1.1",
+    referenceImages: [
+      { dataBase64: "ZnJvbnQtdmlldw==", extension: "jpg", isPanorama: false, azimuth: 0 },
+      { dataBase64: "YmFjay12aWV3", extension: "jpg", isPanorama: false, azimuth: 180 },
+    ],
+  }, fetcher);
+
+  assert.equal(body.world_prompt.type, "multi-image");
+  assert.deepEqual(body.world_prompt.multi_image_prompt.map((image) => image.azimuth), [0, 180]);
+  assert.equal(body.world_prompt.text_prompt.includes("complementary directions"), true);
+});
+
+test("reference prompt requests one seamless navigable equirectangular environment", () => {
+  const prompt = buildReferenceImagePrompt("A moonlit stone courtyard with one glass tower.");
+  assert.match(prompt, /2:1 equirectangular 360-degree panorama/i);
+  assert.match(prompt, /one coherent place, not a collage/i);
+  assert.match(prompt, /navigable ground plane/i);
+  assert.match(prompt, /moonlit stone courtyard/i);
+});
+
+test("rejects combining a panorama with additional reference images", () => {
+  const dataBase64 = "a".repeat(120);
+  assert.throws(() => worldLabsGenerateRequestSchema.parse({
+    prompt: "A coherent environment with sufficient detail for a valid generation request.",
+    displayName: "Invalid panorama mix",
+    model: "marble-1.1",
+    referenceImages: [
+      { dataBase64, extension: "jpg", isPanorama: true },
+      { dataBase64, extension: "jpg", isPanorama: false },
+    ],
+  }));
 });
 
 test("normalizes a completed world and its Spark rendering metadata", async () => {

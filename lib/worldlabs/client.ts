@@ -1,4 +1,4 @@
-import type { WorldLabsModel, WorldLabsOperation } from "./schemas.ts";
+import type { WorldLabsModel, WorldLabsOperation, WorldLabsReferenceImage } from "./schemas.ts";
 import { normalizeWorldLabsOperation } from "./schemas.ts";
 
 const DEFAULT_API_URL = "https://api.worldlabs.ai/marble/v1";
@@ -51,7 +51,38 @@ async function worldLabsFetch(path: string, init: RequestInit, fetcher: typeof f
   return body;
 }
 
-export async function startWorldGeneration(input: { prompt: string; displayName: string; model: WorldLabsModel }, fetcher: typeof fetch = fetch): Promise<WorldLabsOperation> {
+function worldPrompt(prompt: string, referenceImages: WorldLabsReferenceImage[]) {
+  const content = (image: WorldLabsReferenceImage) => ({
+    source: "data_base64" as const,
+    data_base64: image.dataBase64,
+    extension: image.extension,
+  });
+  if (referenceImages.length === 1) {
+    const image = referenceImages[0];
+    return {
+      type: "image",
+      image_prompt: content(image),
+      is_pano: image.isPanorama,
+      text_prompt: prompt,
+      disable_recaption: true,
+    };
+  }
+  if (referenceImages.length > 1) {
+    return {
+      type: "multi-image",
+      multi_image_prompt: referenceImages.map((image) => ({
+        ...(image.azimuth == null ? {} : { azimuth: image.azimuth }),
+        content: content(image),
+      })),
+      reconstruct_images: false,
+      text_prompt: prompt,
+      disable_recaption: true,
+    };
+  }
+  return { type: "text", text_prompt: prompt, disable_recaption: true };
+}
+
+export async function startWorldGeneration(input: { prompt: string; displayName: string; model: WorldLabsModel; referenceImages?: WorldLabsReferenceImage[] }, fetcher: typeof fetch = fetch): Promise<WorldLabsOperation> {
   const raw = await worldLabsFetch("/worlds:generate", {
     method: "POST",
     body: JSON.stringify({
@@ -59,7 +90,7 @@ export async function startWorldGeneration(input: { prompt: string; displayName:
       model: input.model,
       tags: ["sonosphere"],
       permission: { public: false, allow_id_access: false, allowed_readers: [], allowed_writers: [] },
-      world_prompt: { type: "text", text_prompt: input.prompt, disable_recaption: true },
+      world_prompt: worldPrompt(input.prompt, input.referenceImages ?? []),
     }),
   }, fetcher);
   return normalizeWorldLabsOperation(raw);

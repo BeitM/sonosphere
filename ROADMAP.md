@@ -1,10 +1,10 @@
 # Roadmap
 
-This roadmap reflects the implementation and limitations present on 2026-07-16. Items that depend on product direction are explicitly marked.
+This roadmap reflects the implementation and limitations present on 2026-07-19. Items that depend on product direction are explicitly marked.
 
 ## Current phase
 
-Prompt-to-world prototype: song evidence is normalized into a coherent semantic interpretation, spatial plan, and Marble prompt. Explicit fixtures, real acoustic analysis, optional private World Labs generation, and embedded SparkJS viewing are operational locally.
+Prompt-to-world prototype: song evidence is normalized into a coherent semantic interpretation, spatial plan, Marble prompt, and optional 360° reference panorama. Optional private World Labs image-conditioned generation and embedded SparkJS viewing are operational locally.
 
 ## Immediate priorities
 
@@ -22,6 +22,7 @@ Prompt-to-world prototype: song evidence is normalized into a coherent semantic 
 - Improve the analyzer with source separation, singing-aware transcription, and stronger structural labeling only if the product needs those costs and dependencies.
 - Add citation-aware context research with clear separation between artist statements, facts, published readings, community readings, and AI inference. **Source-policy input required.**
 - Harden upload validation, request-size enforcement, temporary-file cleanup, and client-safe error responses before external audio transfer.
+- Evaluate user-uploaded references and two-view generation only after comparing them against the single-panorama workflow; reject contradictory multi-view inputs rather than increasing reference count by default.
 
 ## Later features
 

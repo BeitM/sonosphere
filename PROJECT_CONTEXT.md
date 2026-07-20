@@ -1,6 +1,6 @@
 # Project context
 
-Snapshot reviewed: 2026-07-16.
+Snapshot reviewed: 2026-07-19.
 
 ## Purpose and audience
 
@@ -19,8 +19,9 @@ The application is a TypeScript/React App Router project compiled by vinext/Vite
 - `lib/analysis/weights.ts` calculates confidence, normalized evidence weights, and fallback levels.
 - `lib/analysis/pipeline.ts` consumes validated musical analysis, gathers the other available evidence, builds deterministic semantic and spatial interpretations, creates both prompt forms, and validates the complete result. `lib/analysis/spatial-journey.ts` derives a fallback topology from acoustic relationships instead of enforcing a four-beat spatial arc. `lib/analysis/world-prompts.ts` removes exact repeated prompt blocks and enforces the 1,800-character Marble safety budget.
 - `lib/ai/openai.ts` optionally replaces the three synthesized stages with validated OpenAI Structured Outputs. Failure returns the local result with an added limitation.
-- `lib/worldlabs/` validates World Labs requests and operation responses, keeps the API key server-only, and enforces a second access token on hosted paid-generation routes.
-- `app/world-generation.tsx` owns explicit cost confirmation and safe polling. `app/world-viewer.tsx` renders generated SPZ assets through SparkJS with World Labs scale and ground metadata.
+- `lib/reference-images.ts` builds a panorama-specific visual brief and optionally generates one in-memory JPEG through the OpenAI Image API.
+- `lib/worldlabs/` validates text, panorama, and multi-image World Labs requests and operation responses, keeps the API key server-only, and enforces a second access token on hosted paid-generation routes.
+- `app/world-generation.tsx` owns optional reference-image generation, selection, explicit World Labs cost confirmation, and safe polling. `app/world-viewer.tsx` renders generated SPZ assets through SparkJS with World Labs scale and ground metadata.
 - `services/audio-analysis/` is a private Python 3.12 FastAPI/librosa service. It decodes uploads, extracts acoustic and structural features, and removes its per-request temporary directory before responding.
 - `worker/index.ts` serves the vinext app and delegates image optimization to Cloudflare bindings.
 - `vite.config.ts` configures vinext, the Cloudflare Vite plugin, and Sites packaging. `.openai/hosting.json` currently declares no D1 or R2 binding.
@@ -37,7 +38,8 @@ The project has two commits: the initial prototype and a follow-up aligning Open
 6. The pipeline calculates confidence, weights, and fallback level, then builds and validates the interpretation, spatial translation, and prompt. Real uploads never receive fixture lyrics or acoustic data.
 7. In `AI_MODE=live`, derived evidence may be sent to OpenAI for three Structured Output calls. Invalid or failed live output falls back to the local validated result.
 8. The browser holds the result in memory and can regenerate it, copy the prompt, or download the complete JSON.
-9. On explicit confirmation only, the browser starts one private World Labs operation, polls it, and loads the returned SPZ URL into SparkJS. Refreshing discards Sonosphere's state but does not delete a completed world from the World Labs account.
+9. The user may explicitly generate one 2:1 OpenAI panorama. The JPEG remains in browser memory and can be selected or excluded before world generation.
+10. On explicit confirmation only, the browser starts one private World Labs text-or-image-conditioned operation, polls it, and loads the returned SPZ URL into SparkJS. Refreshing discards Sonosphere's state but does not delete a completed world from the World Labs account.
 
 ## API surface
 
@@ -49,6 +51,7 @@ The project has two commits: the initial prototype and a follow-up aligning Open
 | `POST /api/song/context` | Standalone context lookup | No |
 | `POST /api/song/analyze-audio` | Multipart real or explicit-fixture musical analysis | Yes |
 | `POST /api/song/interpret` | Interpretation-only projection of the full pipeline | No |
+| `POST /api/world/reference-image` | Generate one in-memory song-world panorama | Yes, optional |
 | `POST /api/world-labs/generate` | Start a confirmed private World Labs operation | Yes, optional |
 | `GET /api/world-labs/operations/{operationId}` | Poll and validate a World Labs operation | Yes, optional |
 
@@ -59,8 +62,9 @@ Fixture mode requires no external service. Real uploads use the private audio-an
 | Variable | Status |
 | --- | --- |
 | `AI_MODE` | Optional; only exact value `live` enables OpenAI, otherwise local mode is used. |
-| `OPENAI_API_KEY` | Required only for live AI and read server-side. |
+| `OPENAI_API_KEY` | Required for live analysis enhancement or optional reference-image generation; read server-side. |
 | `OPENAI_MODEL` | Optional; defaults to `gpt-5.6-terra`. |
+| `OPENAI_IMAGE_MODEL` | Optional; defaults to `gpt-image-2`. |
 | `LYRICS_PROVIDER` | Optional; defaults to LRCLIB lookup. Set to `manual` to disable automatic lookup. |
 | `MUSIC_ANALYSIS_PROVIDER` | Set to `http` for real uploads. Other values intentionally leave real analysis unconfigured. |
 | `AUDIO_ANALYSIS_URL` | Required by the HTTP adapter. |
@@ -88,6 +92,8 @@ Working in the reviewed snapshot:
 - Completed Upload, Confirm, and World prompt steps are navigable without resetting state or triggering regeneration; Interpret remains a non-clickable processing state.
 - Cloudflare-targeted production build and a development server.
 - Explicit paid World Labs submission with model/cost review, private permissions, operation polling, validated asset metadata, and no automatic paid retry.
+- Optional paid OpenAI 360° panorama generation with an in-memory preview, opt-out, regeneration, and validated inline World Labs handoff.
+- World Labs conditioning supports one panorama or up to four non-panorama reference images alongside the text prompt; the current UI generates one panorama by default.
 - Embedded SparkJS SPZ viewing with orbit, pan, zoom, reset, quality selection, fullscreen, and a Marble fallback link.
 
 Not implemented:
@@ -95,12 +101,13 @@ Not implemented:
 - Real audio recognition.
 - Licensed lyrics, lyric transcription, or live context research. LRCLIB is a best-effort community source, not a licensed catalog.
 - Database/object storage, accounts, retention controls, or use of the existing auth helper.
-- Multi-scene Studio Compose, reference-image/video conditioning, collider-backed walking, authored camera behavior, or audio-reactive systems.
+- Multi-scene Studio Compose, user-uploaded reference images, video conditioning, collider-backed walking, authored camera behavior, or audio-reactive systems.
 
 ## Known issues and limitations
 
 - The audio service must be deployed separately from the Cloudflare-hosted web app. Production needs an HTTPS endpoint, bearer-token secret handling, request limits, and operational monitoring.
 - World Labs API credits are purchased separately from Marble web credits. Active operation state is not persisted, and private Marble links may require the API-key owner's World Labs login.
+- Reference panoramas use a separate paid OpenAI Image API call. They are not persisted, so refreshing the result page discards them.
 - The browser currently uploads audio separately for identity and analysis. Identity does not yet inspect bytes, so a production recognition adapter should consolidate or use bounded temporary object storage.
 - The local pipeline uses scale and intensity in the Marble prompt, but `visualPreference` remains live-AI-only and balance affects deterministic evidence weights more strongly than deterministic prose.
 - `artistStatements` receives weight from aggregate external-context confidence even when the context contains no artist statement. This can make the displayed evidence mix overstate that source.
