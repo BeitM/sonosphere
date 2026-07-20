@@ -91,6 +91,7 @@ Working in the reviewed snapshot:
 - Spatial output uses a flexible linear, looping, branching, radial, layered, or distributed topology with connected areas, transformation logic, and an orientation strategy; it does not require start/development/climax/end spaces.
 - Completed Upload, Confirm, and World prompt steps are navigable without resetting state or triggering regeneration; Interpret remains a non-clickable processing state.
 - Cloudflare-targeted production build and a development server.
+- Native Next.js production build for optional Vercel deployment; the Cloudflare/vinext build remains the default project build.
 - Explicit paid World Labs submission with model/cost review, private permissions, operation polling, validated asset metadata, and no automatic paid retry.
 - Optional paid OpenAI 360° panorama generation with an in-memory preview, opt-out, regeneration, and validated inline World Labs handoff.
 - World Labs conditioning supports one panorama or up to four non-panorama reference images alongside the text prompt; the current UI generates one panorama by default.
@@ -106,6 +107,7 @@ Not implemented:
 ## Known issues and limitations
 
 - The audio service must be deployed separately from the Cloudflare-hosted web app. Production needs an HTTPS endpoint, bearer-token secret handling, request limits, and operational monitoring.
+- Vercel can host the native Next.js application, but its 4.5 MB Function payload limit is below Sonosphere's 25 MB upload contract. A production Vercel deployment needs direct authorized upload to the analyzer/object storage, or a deliberately smaller upload limit.
 - World Labs API credits are purchased separately from Marble web credits. Active operation state is not persisted, and private Marble links may require the API-key owner's World Labs login.
 - Reference panoramas use a separate paid OpenAI Image API call. They are not persisted, so refreshing the result page discards them.
 - The browser currently uploads audio separately for identity and analysis. Identity does not yet inspect bytes, so a production recognition adapter should consolidate or use bounded temporary object storage.

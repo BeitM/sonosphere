@@ -17,6 +17,7 @@ test("server-renders the Sonosphere studio", async () => {
   assert.match(html, /<title>Sonosphere — turn a song into a world<\/title>/i);
   assert.match(html, /Turn a song into/);
   assert.match(html, /Analysis studio/);
+  assert.doesNotMatch(html, /DEVELOPMENT FIXTURES|Amazing Grace|Glass Orchard|Untitled Current/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 

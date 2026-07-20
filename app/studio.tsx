@@ -11,12 +11,6 @@ const maxBytes = 25 * 1024 * 1024;
 const accepted = [".mp3", ".wav", ".m4a", ".flac"];
 const defaults: Refinement = { balance: "balanced", realism: "mixed", scale: "monumental", intensity: "intense", worldType: "auto", userNote: "" };
 
-const demos: Array<{ id: FixtureId; eyebrow: string; title: string; meta: string; confidence: string }> = [
-  { id: "known", eyebrow: "High information", title: "Amazing Grace", meta: "Strong lyrics + context", confidence: "98% match" },
-  { id: "obscure", eyebrow: "Limited context", title: "Glass Orchard", meta: "Lyrics + music only", confidence: "78% match" },
-  { id: "instrumental", eyebrow: "Unknown original", title: "Untitled Current", meta: "Sound-led interpretation", confidence: "8% match" },
-];
-
 async function readApiResponse<T extends object>(response: Response, fallback: string): Promise<T & { error?: string }> {
   const raw = await response.text();
   if (!raw) throw new Error(`${fallback} The server returned an empty response (HTTP ${response.status}).`);
@@ -59,8 +53,8 @@ function Progress({ step, canConfirm, canShowResults, onNavigate }: { step: Step
 export function Studio() {
   const [step, setStep] = useState<Step>("upload");
   const [file, setFile] = useState<File | null>(null);
-  const [fixtureId, setFixtureId] = useState<FixtureId>("known");
-  const [useFixture, setUseFixture] = useState(false);
+  const fixtureId: FixtureId = "known";
+  const useFixture = false;
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [album, setAlbum] = useState("");
@@ -78,7 +72,7 @@ export function Studio() {
   const [copied, setCopied] = useState<"marble" | "full" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const reset = () => { setStep("upload"); setFile(null); setUseFixture(false); setIdentification(null); setAnalysis(null); setMusicAnalysis(null); setError(""); setTitle(""); setArtist(""); setAlbum(""); setManualLyrics(""); setManualContext(""); setPersonal(""); setVisualPreference(""); setEmphasis(""); setRefinement(defaults); };
+  const reset = () => { setStep("upload"); setFile(null); setIdentification(null); setAnalysis(null); setMusicAnalysis(null); setError(""); setTitle(""); setArtist(""); setAlbum(""); setManualLyrics(""); setManualContext(""); setPersonal(""); setVisualPreference(""); setEmphasis(""); setRefinement(defaults); };
   const chooseFile = (next: File | null) => {
     setError("");
     if (!next) return;
@@ -86,22 +80,16 @@ export function Studio() {
     if (!supported) return setError("Use an MP3, WAV, M4A, or FLAC audio file.");
     if (!next.size) return setError("That file appears to be empty or unreadable.");
     if (next.size > maxBytes) return setError("Choose a file smaller than 25 MB for this prototype.");
-    setFile(next); setUseFixture(false); setMusicAnalysis(null); setIdentification(null); setAnalysis(null);
+    setFile(next); setMusicAnalysis(null); setIdentification(null); setAnalysis(null);
   };
 
-  const identify = async (overrideFixture?: FixtureId) => {
-    const selectedFixture = overrideFixture ?? fixtureId;
-    let selectedFile = file;
-    if (overrideFixture) {
-      const names = { known: "amazing-grace-demo.mp3", obscure: "glass-orchard-demo.mp3", instrumental: "unknown-original-instrumental.mp3" };
-      selectedFile = new File(["sonosphere development fixture"], names[overrideFixture], { type: "audio/mpeg" });
-      setFile(selectedFile);
-    }
-    if (!selectedFile) return setError("Choose an audio file or start with one of the development examples.");
-    const fixture = Boolean(overrideFixture);
-    setFixtureId(selectedFixture); setUseFixture(fixture); setMusicAnalysis(null); setError(""); setStep("generating");
+  const identify = async () => {
+    const selectedFixture = fixtureId;
+    const selectedFile = file;
+    if (!selectedFile) return setError("Choose an audio file before continuing.");
+    setMusicAnalysis(null); setError(""); setStep("generating");
     try {
-      const body = new FormData(); body.append("audio", selectedFile); body.append("fixtureId", selectedFixture); body.append("useFixture", String(fixture)); body.append("title", title); body.append("artist", artist);
+      const body = new FormData(); body.append("audio", selectedFile); body.append("fixtureId", selectedFixture); body.append("useFixture", String(useFixture)); body.append("title", title); body.append("artist", artist);
       const response = await fetch("/api/song/identify", { method: "POST", body });
       const json = await readApiResponse<SongIdentification>(response, "Identification failed."); if (!response.ok) throw new Error(json.error || "Identification failed.");
       setIdentification(json); setTitle(title || json.title || ""); setArtist(artist || json.artist || ""); setAlbum(album || json.album || ""); setStep("confirm");
@@ -152,11 +140,10 @@ export function Studio() {
           <input ref={inputRef} hidden type="file" accept={accepted.join(",")} onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} />
           <div className="divider"><span>Optional details</span></div>
           <div className="field-grid"><Field label="Song title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="If you know it" /></Field><Field label="Artist"><input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="Artist name" /></Field></div>
-          <button className="primary-button" onClick={() => identify()}><Sparkles size={17} /> Continue to song details <ArrowRight size={17} /></button>
+          <button className="primary-button" onClick={identify}><Sparkles size={17} /> Continue to song details <ArrowRight size={17} /></button>
           <p className="privacy-note">Automatic recording recognition is not connected yet. Add the title and artist when you know them; Sonosphere treats both fields as user-confirmed.</p>
           <p className="privacy-note"><span>Private by design.</span> Real analysis sends the temporary upload only to the configured audio-analysis service; the recording is not stored by Sonosphere.</p>
         </section>
-        <aside className="demo-panel"><div className="demo-heading"><p>Or explore a test case</p><span>DEVELOPMENT FIXTURES</span></div>{demos.map((demo) => <button className="demo-card" onClick={() => identify(demo.id)} key={demo.id}><span className={`demo-art art-${demo.id}`}><Music2 size={18} /></span><span className="demo-copy"><small>{demo.eyebrow}</small><strong>{demo.title}</strong><em>{demo.meta}</em></span><span className="demo-confidence">{demo.confidence}</span><ArrowRight size={17} /></button>)}<p className="demo-footnote">These deterministic fixtures let you test every fallback level without external services.</p></aside>
       </div></section>}
     {step === "confirm" && identification && <section className="confirm-layout">
       <div className="section-intro"><button className="back-button" onClick={() => setStep("upload")}><ArrowLeft size={16} /> Back to upload</button><p className="kicker">Identity check</p><h1>Add or confirm the song.</h1><p>Song recognition is not connected yet. Title and artist values that you supply are treated as confirmed metadata, separate from automatic recognition.</p></div>
